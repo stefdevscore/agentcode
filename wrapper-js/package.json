@@ -1,0 +1,33 @@
+{
+  "name": "agentcode",
+  "version": "0.2.0",
+  "description": "NPM wrapper for the agentcode codebase indexer with bundled runtime binaries",
+  "type": "module",
+  "bin": {
+    "agentcode": "bin/agentcode.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "scripts",
+    "README.md"
+  ],
+  "scripts": {
+    "prepack": "node scripts/verify-binaries.mjs",
+    "prepublishOnly": "node scripts/assert-release-ready.mjs",
+    "test": "vitest run",
+    "clean:binaries": "node scripts/clean-binaries.mjs",
+    "stage:fixture-binaries": "node scripts/stage-binaries.mjs --fixture",
+    "stage:binaries": "node scripts/stage-binaries.mjs",
+    "verify:binaries": "node scripts/verify-binaries.mjs",
+    "check:pack": "node scripts/check-pack.mjs",
+    "release:check": "node scripts/release-check.mjs",
+    "release:check:fixture": "node scripts/release-check.mjs --fixture"
+  },
+  "keywords": ["ai", "mcp", "codebase", "indexing", "context"],
+  "author": "azk",
+  "license": "Unlicense",
+  "devDependencies": {
+    "vitest": "^1.4.0"
+  }
+}

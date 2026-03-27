@@ -1,0 +1,139 @@
+name: Publish
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  build-binaries:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: macos-latest
+            target: x86_64-apple-darwin
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+        working-directory: agentcode/core-rs
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: agentcode-${{ matrix.target }}
+          path: agentcode/core-rs/target/${{ matrix.target }}/release/agentcode*
+
+  publish-npm:
+    needs: build-binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download macOS arm64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: agentcode-aarch64-apple-darwin
+          path: /tmp/agentcode-aarch64-apple-darwin
+      - name: Download macOS x64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: agentcode-x86_64-apple-darwin
+          path: /tmp/agentcode-x86_64-apple-darwin
+      - name: Download linux x64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: agentcode-x86_64-unknown-linux-gnu
+          path: /tmp/agentcode-x86_64-unknown-linux-gnu
+      - name: Download windows x64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: agentcode-x86_64-pc-windows-msvc
+          path: /tmp/agentcode-x86_64-pc-windows-msvc
+      - name: Stage JS package binaries
+        env:
+          AGENTCODE_BIN_DARWIN_ARM64: /tmp/agentcode-aarch64-apple-darwin/agentcode
+          AGENTCODE_BIN_DARWIN_X64: /tmp/agentcode-x86_64-apple-darwin/agentcode
+          AGENTCODE_BIN_LINUX_X64: /tmp/agentcode-x86_64-unknown-linux-gnu/agentcode
+          AGENTCODE_BIN_WIN32_X64: /tmp/agentcode-x86_64-pc-windows-msvc/agentcode.exe
+        run: |
+          cd agentcode/wrapper-js
+          node scripts/stage-binaries.mjs
+          node scripts/verify-binaries.mjs
+          node scripts/check-pack.mjs
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: 'https://registry.npmjs.org'
+      - run: npm ci && npm publish --access public
+        working-directory: agentcode/wrapper-js
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  publish-pypi:
+    needs: build-binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Download macOS arm64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: agentcode-aarch64-apple-darwin
+          path: /tmp/agentcode-aarch64-apple-darwin
+      - name: Download macOS x64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: agentcode-x86_64-apple-darwin
+          path: /tmp/agentcode-x86_64-apple-darwin
+      - name: Download linux x64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: agentcode-x86_64-unknown-linux-gnu
+          path: /tmp/agentcode-x86_64-unknown-linux-gnu
+      - name: Download windows x64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: agentcode-x86_64-pc-windows-msvc
+          path: /tmp/agentcode-x86_64-pc-windows-msvc
+      - name: Stage Python package binaries
+        env:
+          AGENTCODE_BIN_DARWIN_ARM64: /tmp/agentcode-aarch64-apple-darwin/agentcode
+          AGENTCODE_BIN_DARWIN_X64: /tmp/agentcode-x86_64-apple-darwin/agentcode
+          AGENTCODE_BIN_LINUX_X64: /tmp/agentcode-x86_64-unknown-linux-gnu/agentcode
+          AGENTCODE_BIN_WIN32_X64: /tmp/agentcode-x86_64-pc-windows-msvc/agentcode.exe
+        run: |
+          cd agentcode/wrapper-py
+          python scripts/stage_binaries.py
+          python scripts/verify_binaries.py
+      - name: Build Python distributions
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build --wheel
+          python scripts/check_wheel.py
+        working-directory: agentcode/wrapper-py
+      - name: Smoke test installed wheel
+        run: |
+          TMPDIR="$(mktemp -d)"
+          python -m venv "$TMPDIR/venv"
+          . "$TMPDIR/venv/bin/activate"
+          pip install agentcode/wrapper-py/dist/*.whl
+          agentcode map --json
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: agentcode/wrapper-py/dist/

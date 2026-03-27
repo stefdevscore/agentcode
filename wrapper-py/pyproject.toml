@@ -1,0 +1,45 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agentcode"
+version = "0.2.0"
+description = "Python wrapper for the agentcode codebase indexer with bundled runtime binaries"
+readme = "README.md"
+license = { text = "Unlicense" }
+requires-python = ">=3.10"
+authors = [
+    { name = "azk", email = "you@example.com" },
+]
+classifiers = [
+    "License :: OSI Approved :: The Unlicense (Unlicense)",
+    "Programming Language :: Python :: 3",
+]
+dependencies = [
+    "click>=8.1.7",
+]
+
+[project.scripts]
+agentcode = "agentcode.cli:cli"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agentcode"]
+artifacts = [
+    "src/agentcode/bin/**",
+]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "hatch_build.py",
+    "src/agentcode/**",
+    "scripts/**",
+    "README.md",
+    "pyproject.toml",
+]
+
+[tool.hatch.build.hooks.custom]
+path = "hatch_build.py"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]

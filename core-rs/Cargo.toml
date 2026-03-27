@@ -1,0 +1,29 @@
+[package]
+name = "agentcode"
+version = "0.2.0"
+edition = "2021"
+authors = ["azk"]
+description = "High-performance codebase indexer for AI agents"
+license = "Unlicense"
+repository = "https://github.com/stefdevscore/agentcode"
+readme = "../README.md"
+
+[dependencies]
+clap = { version = "4.4", features = ["derive"] }
+walkdir = "2.4"
+tree-sitter = "0.20"
+tree-sitter-typescript = "0.20"
+tree-sitter-python = "0.20"
+tree-sitter-rust = "0.20"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+ignore = "0.4"
+colored = "2.1"
+anyhow = "1.0"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

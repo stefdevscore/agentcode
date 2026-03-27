@@ -1,0 +1,10 @@
+.pytest_cache/
+.ruff_cache/
+.venv-ci/
+.venv-verify/
+dist/
+build/
+src/agentcode/bin/darwin-arm64/agentcode
+src/agentcode/bin/darwin-x64/agentcode
+src/agentcode/bin/linux-x64/agentcode
+src/agentcode/bin/win32-x64/agentcode.exe

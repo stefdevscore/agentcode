@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, dev ]
+  pull_request:
+    branches: [ main, dev ]
+
+jobs:
+  rust:
+    name: Rust Core (clippy/test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - name: Rust Check
+        run: |
+          cd agentcode/core-rs
+          cargo fmt --check
+          cargo clippy -- -D warnings
+          cargo test
+
+  javascript:
+    name: JS Wrapper (test/package)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: agentcode/wrapper-js/package-lock.json
+      - name: JS Install & Test
+        run: |
+          cd agentcode/wrapper-js
+          npm ci
+          npm test
+          npm run stage:fixture-binaries
+          npm run verify:binaries
+          npm run check:pack
+          TARBALL="$(npm pack --silent)"
+          WRAPPER_DIR="$PWD"
+          TMPDIR="$(mktemp -d)"
+          cd "$TMPDIR"
+          npm init -y
+          npm install "$WRAPPER_DIR/$TARBALL"
+          ./node_modules/.bin/agentcode --help
+
+  python:
+    name: Python Wrapper (lint/test/build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Python Install & Test
+        run: |
+          cd agentcode/wrapper-py
+          python -m pip install --upgrade pip
+          pip install build ruff pytest click
+          ruff check .
+          PYTHONPATH=src python -m pytest
+          python scripts/stage_binaries.py --fixture
+          python scripts/verify_binaries.py
+          python -m build --wheel
+          python scripts/check_wheel.py
+          TMPDIR="$(mktemp -d)"
+          python -m venv "$TMPDIR/venv"
+          . "$TMPDIR/venv/bin/activate"
+          pip install dist/*.whl
+          agentcode map --json
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run OSV-Scanner
+        uses: google/osv-scanner-action@v2.3.5
+        with:
+          scan-args: |-
+            --recursive
+            ./agentcode

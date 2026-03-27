@@ -1,0 +1,6 @@
+node_modules/
+agentcode-*.tgz
+bin/darwin-arm64/agentcode
+bin/darwin-x64/agentcode
+bin/linux-x64/agentcode
+bin/win32-x64/agentcode.exe
