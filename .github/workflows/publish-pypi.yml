@@ -1,11 +1,12 @@
-name: Publish
+name: Publish PyPI
 
 on:
   release:
     types: [published]
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
   id-token: write
 
 jobs:
@@ -27,106 +28,103 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
-      - name: Build
+      - name: Build release binary
         run: cargo build --release --target ${{ matrix.target }}
         working-directory: core-rs
-      - name: Upload Artifact
+      - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
           name: agentcode-${{ matrix.target }}
           path: core-rs/target/${{ matrix.target }}/release/agentcode*
 
-  publish-npm:
-    needs: build-binaries
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Download macOS arm64 binary
-        uses: actions/download-artifact@v4
-        with:
-          name: agentcode-aarch64-apple-darwin
-          path: /tmp/agentcode-aarch64-apple-darwin
-      - name: Download macOS x64 binary
-        uses: actions/download-artifact@v4
-        with:
-          name: agentcode-x86_64-apple-darwin
-          path: /tmp/agentcode-x86_64-apple-darwin
-      - name: Download linux x64 binary
-        uses: actions/download-artifact@v4
-        with:
-          name: agentcode-x86_64-unknown-linux-gnu
-          path: /tmp/agentcode-x86_64-unknown-linux-gnu
-      - name: Download windows x64 binary
-        uses: actions/download-artifact@v4
-        with:
-          name: agentcode-x86_64-pc-windows-msvc
-          path: /tmp/agentcode-x86_64-pc-windows-msvc
-      - name: Stage JS package binaries
-        env:
-          AGENTCODE_BIN_DARWIN_ARM64: /tmp/agentcode-aarch64-apple-darwin/agentcode
-          AGENTCODE_BIN_DARWIN_X64: /tmp/agentcode-x86_64-apple-darwin/agentcode
-          AGENTCODE_BIN_LINUX_X64: /tmp/agentcode-x86_64-unknown-linux-gnu/agentcode
-          AGENTCODE_BIN_WIN32_X64: /tmp/agentcode-x86_64-pc-windows-msvc/agentcode.exe
-        run: |
-          cd wrapper-js
-          node scripts/stage-binaries.mjs
-          node scripts/verify-binaries.mjs
-          node scripts/check-pack.mjs
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          registry-url: 'https://registry.npmjs.org'
-      - run: npm ci && npm publish --access public
-        working-directory: wrapper-js
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-  publish-pypi:
+  publish:
     needs: build-binaries
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: "3.12"
+      - name: Check published PyPI version
+        id: check
+        run: |
+          NAME="$(python - <<'PY'
+          import tomllib
+          with open('wrapper-py/pyproject.toml', 'rb') as f:
+              data = tomllib.load(f)
+          print(data['project']['name'])
+          PY
+          )"
+          VERSION="$(python - <<'PY'
+          import tomllib
+          with open('wrapper-py/pyproject.toml', 'rb') as f:
+              data = tomllib.load(f)
+          print(data['project']['version'])
+          PY
+          )"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          import tomllib
+          import urllib.error
+          import urllib.request
+          with open('wrapper-py/pyproject.toml', 'rb') as f:
+              data = tomllib.load(f)
+          name = data['project']['name']
+          version = data['project']['version']
+          url = f'https://pypi.org/pypi/{name}/json'
+          try:
+              with urllib.request.urlopen(url) as resp:
+                  payload = json.load(resp)
+              exists = version in payload.get('releases', {})
+          except urllib.error.HTTPError as err:
+              if err.code == 404:
+                  exists = False
+              else:
+                  raise
+          print(f"exists={'true' if exists else 'false'}")
+          PY
       - name: Download macOS arm64 binary
+        if: steps.check.outputs.exists != 'true'
         uses: actions/download-artifact@v4
         with:
           name: agentcode-aarch64-apple-darwin
           path: /tmp/agentcode-aarch64-apple-darwin
       - name: Download macOS x64 binary
+        if: steps.check.outputs.exists != 'true'
         uses: actions/download-artifact@v4
         with:
           name: agentcode-x86_64-apple-darwin
           path: /tmp/agentcode-x86_64-apple-darwin
       - name: Download linux x64 binary
+        if: steps.check.outputs.exists != 'true'
         uses: actions/download-artifact@v4
         with:
           name: agentcode-x86_64-unknown-linux-gnu
           path: /tmp/agentcode-x86_64-unknown-linux-gnu
       - name: Download windows x64 binary
+        if: steps.check.outputs.exists != 'true'
         uses: actions/download-artifact@v4
         with:
           name: agentcode-x86_64-pc-windows-msvc
           path: /tmp/agentcode-x86_64-pc-windows-msvc
-      - name: Stage Python package binaries
+      - name: Stage bundled binaries
+        if: steps.check.outputs.exists != 'true'
         env:
           AGENTCODE_BIN_DARWIN_ARM64: /tmp/agentcode-aarch64-apple-darwin/agentcode
           AGENTCODE_BIN_DARWIN_X64: /tmp/agentcode-x86_64-apple-darwin/agentcode
           AGENTCODE_BIN_LINUX_X64: /tmp/agentcode-x86_64-unknown-linux-gnu/agentcode
           AGENTCODE_BIN_WIN32_X64: /tmp/agentcode-x86_64-pc-windows-msvc/agentcode.exe
         run: |
-          cd wrapper-py
+          python -m pip install --upgrade pip build
           python scripts/stage_binaries.py
           python scripts/verify_binaries.py
-      - name: Build Python distributions
-        run: |
-          python -m pip install --upgrade pip build
           python -m build --wheel
           python scripts/check_wheel.py
         working-directory: wrapper-py
       - name: Smoke test installed wheel
+        if: steps.check.outputs.exists != 'true'
         run: |
           TMPDIR="$(mktemp -d)"
           python -m venv "$TMPDIR/venv"
@@ -134,6 +132,10 @@ jobs:
           pip install wrapper-py/dist/*.whl
           agentcode map --json
       - name: Publish to PyPI
+        if: steps.check.outputs.exists != 'true'
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: wrapper-py/dist/
+      - name: Already published
+        if: steps.check.outputs.exists == 'true'
+        run: echo "${{ steps.check.outputs.name }} ${{ steps.check.outputs.version }} is already published on PyPI"

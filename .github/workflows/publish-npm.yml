@@ -1,0 +1,104 @@
+name: Publish npm
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-binaries:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: macos-latest
+            target: x86_64-apple-darwin
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }}
+        working-directory: core-rs
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: agentcode-${{ matrix.target }}
+          path: core-rs/target/${{ matrix.target }}/release/agentcode*
+
+  publish:
+    needs: build-binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+          cache: npm
+          cache-dependency-path: wrapper-js/package-lock.json
+      - name: Download macOS arm64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: agentcode-aarch64-apple-darwin
+          path: /tmp/agentcode-aarch64-apple-darwin
+      - name: Download macOS x64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: agentcode-x86_64-apple-darwin
+          path: /tmp/agentcode-x86_64-apple-darwin
+      - name: Download linux x64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: agentcode-x86_64-unknown-linux-gnu
+          path: /tmp/agentcode-x86_64-unknown-linux-gnu
+      - name: Download windows x64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: agentcode-x86_64-pc-windows-msvc
+          path: /tmp/agentcode-x86_64-pc-windows-msvc
+      - name: Install dependencies
+        run: npm ci
+        working-directory: wrapper-js
+      - name: Check published npm version
+        id: check
+        shell: bash
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          NAME="$(node -p "require('./package.json').name")"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          if npm view "${NAME}@${VERSION}" version >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+        working-directory: wrapper-js
+      - name: Stage bundled binaries
+        if: steps.check.outputs.exists != 'true'
+        env:
+          AGENTCODE_BIN_DARWIN_ARM64: /tmp/agentcode-aarch64-apple-darwin/agentcode
+          AGENTCODE_BIN_DARWIN_X64: /tmp/agentcode-x86_64-apple-darwin/agentcode
+          AGENTCODE_BIN_LINUX_X64: /tmp/agentcode-x86_64-unknown-linux-gnu/agentcode
+          AGENTCODE_BIN_WIN32_X64: /tmp/agentcode-x86_64-pc-windows-msvc/agentcode.exe
+        run: npm run release:check
+        working-directory: wrapper-js
+      - name: Publish package
+        if: steps.check.outputs.exists != 'true'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish
+        working-directory: wrapper-js
+      - name: Already published
+        if: steps.check.outputs.exists == 'true'
+        run: echo "${{ steps.check.outputs.name }}@${{ steps.check.outputs.version }} is already published on npm"
