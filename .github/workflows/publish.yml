@@ -10,37 +10,6 @@ permissions:
   id-token: write
 
 jobs:
-  publish-cargo:
-    runs-on: ubuntu-latest
-    environment: release
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Check published crate version
-        id: cargo_check
-        shell: bash
-        working-directory: core-rs
-        run: |
-          VERSION="$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys; print(json.load(sys.stdin)["packages"][0]["version"])')"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          if curl -fsSL "https://crates.io/api/v1/crates/agentcode/$VERSION" >/dev/null 2>&1; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-          fi
-      - uses: rust-lang/crates-io-auth-action@v1
-        id: cargo_auth
-        if: steps.cargo_check.outputs.exists != 'true'
-      - name: Publish crate
-        if: steps.cargo_check.outputs.exists != 'true'
-        working-directory: core-rs
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ steps.cargo_auth.outputs.token }}
-        run: cargo publish
-      - name: Already published
-        if: steps.cargo_check.outputs.exists == 'true'
-        run: echo "agentcode v${{ steps.cargo_check.outputs.version }} is already published on crates.io"
-
   build-binaries:
     runs-on: ${{ matrix.os }}
     strategy:

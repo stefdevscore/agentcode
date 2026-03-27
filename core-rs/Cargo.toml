@@ -1,6 +1,6 @@
 [package]
 name = "agentcode"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2021"
 authors = ["azk"]
 description = "High-performance codebase indexer for AI agents"
