@@ -1,18 +1,29 @@
 # agentcode (Python)
 
-Python wrapper for agentcode. Release-built packages expose the `agentcode` CLI and resolve bundled platform binaries at runtime.
+Install `agentcode`, then run `agentcode`.
 
-## Usage
+## Install
+
+```bash
+pip install agentcode
+```
+
+## Use
 
 ```bash
 agentcode map --budget 8k --json
 agentcode mcp
 ```
 
-## Notes
+This package bundles the runtime, so normal installs should work out of the box.
 
-- `--budget` accepts `Nk` shorthand such as `8k` and `32k`.
-- `--json` emits pure JSON without status lines.
-- Release artifacts are expected to contain staged binaries for the supported targets.
-- A source checkout is not a valid wheel or sdist unless binaries have been staged.
-- Set `AGENTCODE_BINARY` to point at a custom binary when testing from a source checkout.
+## Maintainers
+
+The wheel includes bundled binaries for:
+
+- `darwin-arm64`
+- `darwin-x64`
+- `linux-x64`
+- `win32-x64`
+
+For local development, you can override the bundled runtime with `AGENTCODE_BINARY=/path/to/agentcode`.

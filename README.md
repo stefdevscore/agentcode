@@ -1,52 +1,39 @@
 # agentcode
 
-> A fast codebase context mapper for AI tooling, with a Rust core and installable wrappers for JavaScript and Python.
+Fast codebase context for AI tools.
 
-agentcode scans Rust, Python, TypeScript, JavaScript, TSX, and JSX source files, extracts high-signal symbols, and emits a compact JSON map that can be fed into agents, prompts, or MCP clients.
+`agentcode` scans a repo, finds useful symbols, and prints a compact JSON map you can feed into prompts, agents, or MCP clients.
 
----
+## Install
 
-## Features
-
-- **Shared Rust Core**: One indexing and budgeting engine powers the CLI and MCP server.
-- **Budget-Aware Output**: `--budget` accepts raw integers and shorthand like `8k`, `32k`, and `128k`.
-- **Machine-Friendly JSON**: `--json` prints pure JSON without status text.
-- **MCP Mode**: `agentcode mcp` serves line-delimited JSON-RPC over stdin/stdout.
-- **Multi-Ecosystem Distribution**: Publishable wrappers exist for npm and PyPI, backed by the same Rust runtime.
-
----
-
-## Quick Start
-
-### Rust
+### Rust CLI
 
 ```bash
 cargo install agentcode
-agentcode map --budget 8k --json
 ```
 
-### JavaScript
+### npm wrapper
 
 ```bash
-npx agentcode map --budget 8k --json
+npm install -g agentcode-js
 ```
 
-### Python
+### Python wrapper
 
 ```bash
 pip install agentcode
-agentcode map --budget 32k --json
 ```
 
----
-
-## Example
+## Use
 
 ```bash
 agentcode map --path . --budget 8k --json
+agentcode mcp
 ```
 
-Example output:
+`--budget` accepts raw numbers and shorthand like `8k` or `32k`.
+
+## Example Output
 
 ```json
 {
@@ -67,66 +54,37 @@ Example output:
 }
 ```
 
----
-
-## Budget Semantics
-
-- agentcode treats the budget as an approximate token target and enforces it against serialized JSON size.
-- Very small budgets still return a valid JSON object, even when that means truncating or clearing `root`.
-- Human-readable mode prints a summary plus the final JSON payload.
-
----
-
 ## MCP Mode
-
-Start the MCP server:
 
 ```bash
 agentcode mcp
 ```
 
-Supported public method:
+Public method:
+`get_map`
 
-- `get_map`
-
-Request shape:
+Example request:
 
 ```json
 {"jsonrpc":"2.0","id":1,"method":"get_map","params":{"path":".","budget":"8k"}}
 ```
 
-Response shape:
+Example response:
 
 ```json
 {"jsonrpc":"2.0","id":1,"result":{"map":"{\"root\":\"/repo\",\"files\":[]}"}}
 ```
 
-JSON-RPC notifications are accepted and do not produce stdout output.
+## Maintainers
 
----
-
-## Platform Support
-
-The Rust crate publishes the native CLI directly.
-
-The npm and PyPI wrappers resolve bundled runtime binaries for:
+The npm and Python packages ship bundled binaries for:
 
 - `darwin-arm64`
 - `darwin-x64`
 - `linux-x64`
 - `win32-x64`
 
-Use `AGENTCODE_BINARY=/path/to/agentcode` to override the bundled runtime during local development or custom deployment.
-
----
-
-## Repository Layout
-
-- `core-rs/` — Rust library, CLI, and MCP server
-- `wrapper-js/` — npm wrapper
-- `wrapper-py/` — Python wrapper
-
----
+For local development, you can override the bundled runtime with `AGENTCODE_BINARY=/path/to/agentcode`.
 
 ## License
 

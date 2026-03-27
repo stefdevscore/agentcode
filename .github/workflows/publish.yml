@@ -29,12 +29,12 @@ jobs:
           targets: ${{ matrix.target }}
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
-        working-directory: agentcode/core-rs
+        working-directory: core-rs
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: agentcode-${{ matrix.target }}
-          path: agentcode/core-rs/target/${{ matrix.target }}/release/agentcode*
+          path: core-rs/target/${{ matrix.target }}/release/agentcode*
 
   publish-npm:
     needs: build-binaries
@@ -68,7 +68,7 @@ jobs:
           AGENTCODE_BIN_LINUX_X64: /tmp/agentcode-x86_64-unknown-linux-gnu/agentcode
           AGENTCODE_BIN_WIN32_X64: /tmp/agentcode-x86_64-pc-windows-msvc/agentcode.exe
         run: |
-          cd agentcode/wrapper-js
+          cd wrapper-js
           node scripts/stage-binaries.mjs
           node scripts/verify-binaries.mjs
           node scripts/check-pack.mjs
@@ -78,7 +78,7 @@ jobs:
           node-version: 20
           registry-url: 'https://registry.npmjs.org'
       - run: npm ci && npm publish --access public
-        working-directory: agentcode/wrapper-js
+        working-directory: wrapper-js
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -117,7 +117,7 @@ jobs:
           AGENTCODE_BIN_LINUX_X64: /tmp/agentcode-x86_64-unknown-linux-gnu/agentcode
           AGENTCODE_BIN_WIN32_X64: /tmp/agentcode-x86_64-pc-windows-msvc/agentcode.exe
         run: |
-          cd agentcode/wrapper-py
+          cd wrapper-py
           python scripts/stage_binaries.py
           python scripts/verify_binaries.py
       - name: Build Python distributions
@@ -125,15 +125,15 @@ jobs:
           python -m pip install --upgrade pip build
           python -m build --wheel
           python scripts/check_wheel.py
-        working-directory: agentcode/wrapper-py
+        working-directory: wrapper-py
       - name: Smoke test installed wheel
         run: |
           TMPDIR="$(mktemp -d)"
           python -m venv "$TMPDIR/venv"
           . "$TMPDIR/venv/bin/activate"
-          pip install agentcode/wrapper-py/dist/*.whl
+          pip install wrapper-py/dist/*.whl
           agentcode map --json
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          packages-dir: agentcode/wrapper-py/dist/
+          packages-dir: wrapper-py/dist/
