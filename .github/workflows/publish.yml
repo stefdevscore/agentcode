@@ -1,0 +1,172 @@
+name: Publish
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish-cargo:
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Check published crate version
+        id: cargo_check
+        shell: bash
+        working-directory: core-rs
+        run: |
+          VERSION="$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys; print(json.load(sys.stdin)["packages"][0]["version"])')"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if curl -fsSL "https://crates.io/api/v1/crates/agentcode/$VERSION" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: rust-lang/crates-io-auth-action@v1
+        id: cargo_auth
+        if: steps.cargo_check.outputs.exists != 'true'
+      - name: Publish crate
+        if: steps.cargo_check.outputs.exists != 'true'
+        working-directory: core-rs
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.cargo_auth.outputs.token }}
+        run: cargo publish
+      - name: Already published
+        if: steps.cargo_check.outputs.exists == 'true'
+        run: echo "agentcode v${{ steps.cargo_check.outputs.version }} is already published on crates.io"
+
+  build-binaries:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: macos-latest
+            target: x86_64-apple-darwin
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }}
+        working-directory: core-rs
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: agentcode-${{ matrix.target }}
+          path: core-rs/target/${{ matrix.target }}/release/agentcode*
+
+  publish-pypi:
+    needs: build-binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check published PyPI version
+        id: pypi_check
+        run: |
+          NAME="$(python - <<'PY'
+          import tomllib
+          with open('wrapper-py/pyproject.toml', 'rb') as f:
+              data = tomllib.load(f)
+          print(data['project']['name'])
+          PY
+          )"
+          VERSION="$(python - <<'PY'
+          import tomllib
+          with open('wrapper-py/pyproject.toml', 'rb') as f:
+              data = tomllib.load(f)
+          print(data['project']['version'])
+          PY
+          )"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          import tomllib
+          import urllib.error
+          import urllib.request
+          with open('wrapper-py/pyproject.toml', 'rb') as f:
+              data = tomllib.load(f)
+          name = data['project']['name']
+          version = data['project']['version']
+          url = f'https://pypi.org/pypi/{name}/json'
+          try:
+              with urllib.request.urlopen(url) as resp:
+                  payload = json.load(resp)
+              exists = version in payload.get('releases', {})
+          except urllib.error.HTTPError as err:
+              if err.code == 404:
+                  exists = False
+              else:
+                  raise
+          print(f"exists={'true' if exists else 'false'}")
+          PY
+      - name: Download macOS arm64 binary
+        if: steps.pypi_check.outputs.exists != 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: agentcode-aarch64-apple-darwin
+          path: /tmp/agentcode-aarch64-apple-darwin
+      - name: Download macOS x64 binary
+        if: steps.pypi_check.outputs.exists != 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: agentcode-x86_64-apple-darwin
+          path: /tmp/agentcode-x86_64-apple-darwin
+      - name: Download linux x64 binary
+        if: steps.pypi_check.outputs.exists != 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: agentcode-x86_64-unknown-linux-gnu
+          path: /tmp/agentcode-x86_64-unknown-linux-gnu
+      - name: Download windows x64 binary
+        if: steps.pypi_check.outputs.exists != 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: agentcode-x86_64-pc-windows-msvc
+          path: /tmp/agentcode-x86_64-pc-windows-msvc
+      - name: Stage bundled binaries
+        if: steps.pypi_check.outputs.exists != 'true'
+        env:
+          AGENTCODE_BIN_DARWIN_ARM64: /tmp/agentcode-aarch64-apple-darwin/agentcode
+          AGENTCODE_BIN_DARWIN_X64: /tmp/agentcode-x86_64-apple-darwin/agentcode
+          AGENTCODE_BIN_LINUX_X64: /tmp/agentcode-x86_64-unknown-linux-gnu/agentcode
+          AGENTCODE_BIN_WIN32_X64: /tmp/agentcode-x86_64-pc-windows-msvc/agentcode.exe
+        run: |
+          python -m pip install --upgrade pip build
+          python scripts/stage_binaries.py
+          python scripts/verify_binaries.py
+          python -m build --wheel
+          python scripts/check_wheel.py
+        working-directory: wrapper-py
+      - name: Smoke test installed wheel
+        if: steps.pypi_check.outputs.exists != 'true'
+        run: |
+          TMPDIR="$(mktemp -d)"
+          python -m venv "$TMPDIR/venv"
+          . "$TMPDIR/venv/bin/activate"
+          pip install wrapper-py/dist/*.whl
+          agentcode map --json
+      - name: Publish to PyPI
+        if: steps.pypi_check.outputs.exists != 'true'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: wrapper-py/dist/
+      - name: Already published
+        if: steps.pypi_check.outputs.exists == 'true'
+        run: echo "${{ steps.pypi_check.outputs.name }} ${{ steps.pypi_check.outputs.version }} is already published on PyPI"

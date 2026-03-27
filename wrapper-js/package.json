@@ -1,6 +1,6 @@
 {
   "name": "agentcode-js",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "NPM wrapper for the agentcode codebase indexer with bundled runtime binaries",
   "type": "module",
   "bin": {
