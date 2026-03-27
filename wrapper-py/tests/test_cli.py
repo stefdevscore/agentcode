@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import platform
 import tempfile
 
 import click
 from click.testing import CliRunner
 import pytest
 
-from agentcode.cli import cli, get_binary_path, get_packaged_binary_path
+from agentcode.cli import TARGETS, cli, get_binary_path, get_packaged_binary_path
 
 
 def test_env_override_binary_runs_fixture() -> None:
@@ -33,10 +34,12 @@ def test_resolve_binary_uses_override() -> None:
 def test_packaged_binary_path_resolution() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         base_dir = Path(tmpdir)
-        binary = base_dir / "bin" / "darwin-arm64" / "agentcode"
+        folder, executable = TARGETS[(platform.system(), platform.machine())]
+        binary = base_dir / "bin" / folder / executable
         binary.parent.mkdir(parents=True)
         binary.write_text('#!/bin/sh\necho "ok"\n', encoding="utf-8")
-        binary.chmod(0o755)
+        if not executable.endswith(".exe"):
+            binary.chmod(0o755)
         assert get_packaged_binary_path(base_dir) == str(binary)
 
 
