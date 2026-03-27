@@ -79,9 +79,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install OSV-Scanner
+        run: |
+          curl -fsSL -o /tmp/osv-scanner https://github.com/google/osv-scanner/releases/download/v2.3.5/osv-scanner_linux_amd64
+          chmod +x /tmp/osv-scanner
       - name: Run OSV-Scanner
-        uses: google/osv-scanner-action@v2.3.5
-        with:
-          scan-args: |-
-            --recursive
-            .
+        run: /tmp/osv-scanner scan --recursive .
